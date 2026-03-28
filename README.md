@@ -1,7 +1,25 @@
 Telemetry Power Governor RTL — README
 =====================================
 
-**Project**: Small power governor RTL demonstrating counters, a 4-state FSM governor, thermal interface, EWMA predictor, and workload classification.
+**What is this project?**
+
+This repository provides a compact, practical RTL reference implementation of a telemetry-driven power governor for SoC subsystems. The goal is to show how simple digital building blocks — cycle counters, a small finite-state machine (FSM), and a register interface — can be combined to measure workload, predict near-term activity, and make safe, temperature-aware power-state decisions in hardware.
+
+Key points:
+
+- Purpose: a small, synthesizable-friendly demo that demonstrates hardware power management techniques for hackathon demos, teaching, and quick SoC prototyping.
+- Inputs: per-cycle telemetry (`activity_in`, `stall_in`) and a simulated temperature (`temp_in`).
+- Decision cadence: the design evaluates measured telemetry once per observation window (`window_done`), avoiding per-cycle churn.
+- Policy: a 4-state governor (`SLEEP`, `LOW_POWER`, `ACTIVE`, `TURBO`) with thermal override, hysteresis (dwell), and a lightweight EWMA predictor to pre-scale on ramps.
+- Observability: testbenches produce `dump.vcd` waveforms and a small graphing tool is included to visualize power states, EWMA, and the arbiter grants.
+
+Who this is for:
+
+- Hardware engineers prototyping a PMU policy.
+- Students learning about clock-gating, telemetry-driven governors, and simple predictors.
+- Hackathon teams wanting a verifiable, testbench-driven demo to present.
+
+Continue with the Quick start below to compile and run the included testbenches and generate waveforms.
 
 **Quick start (local)**
 
