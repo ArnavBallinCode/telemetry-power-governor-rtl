@@ -158,3 +158,11 @@ gtkwave dump.vcd
 
 ---
 Report generated: 28 March 2026
+
+**Generated Graphs (EPV)**
+
+The following graphs were generated from `dump.vcd` produced by the integrated arbiter test (`tb_power_arbiter_direct.v`). They visualize governor decisions, predictions, and arbiter grants.
+
+- Power state transitions: ![Power states](docs/graphs/power_states.png)
+- Activity counts & EWMA (A/B): ![Activity & EWMA](docs/graphs/activity_ewma.png)
+- Arbiter grants: ![Arbiter grants](docs/graphs/arbiter_grants.png)
