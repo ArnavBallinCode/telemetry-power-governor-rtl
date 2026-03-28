@@ -103,3 +103,22 @@ Reference:
 python -m pip uninstall -y serial
 python -m pip install -r requirements.txt
 ```
+
+## 9) UI verification scenarios and graphs
+
+The dashboard now includes a dedicated verification section that runs testbench-inspired scenarios on hardware and plots captured behavior.
+
+Available backend scenarios (`GET /api/scenarios`):
+
+- `tb_power_fsm_workload_sweep`
+- `tb_power_arbiter_contention`
+- `tb_reg_interface_thermal_alarm`
+
+Flow:
+
+1. Keep FPGA + Vitis firmware running.
+2. Open dashboard (`/`).
+3. In "Verification Scenarios", pick a scenario and click "Run Scenario".
+4. The UI plots grants/budget/efficiency vs time and shows final state JSON.
+
+This provides quick visual verification against classic testbench-style cases while using live FPGA telemetry.

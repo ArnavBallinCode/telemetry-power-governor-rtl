@@ -4,293 +4,390 @@ const ack = document.getElementById('ack');
 const themeToggle = document.getElementById('themeToggle');
 const themeIcon = document.getElementById('themeIcon');
 
+function el(id) {
+  return document.getElementById(id);
+}
+
 const fields = {
-  stateA: document.getElementById('stateA'),
-  stateB: document.getElementById('stateB'),
-  grantA: document.getElementById('grantA'),
-  grantB: document.getElementById('grantB'),
-  clkEnA: document.getElementById('clkEnA'),
-  clkEnB: document.getElementById('clkEnB'),
-  eff: document.getElementById('eff'),
-  budget: document.getElementById('budget'),
-  headroom: document.getElementById('headroom'),
-  frame: document.getElementById('frame'),
-  tempA: document.getElementById('tempA'),
-  tempB: document.getElementById('tempB'),
-  actA: document.getElementById('actA'),
-  actB: document.getElementById('actB'),
-  stallA: document.getElementById('stallA'),
-  stallB: document.getElementById('stallB'),
-  reqA: document.getElementById('reqA'),
-  reqB: document.getElementById('reqB'),
-  phase: document.getElementById('phase'),
-  mode: document.getElementById('mode'),
-  alarmA: document.getElementById('alarmA'),
-  alarmB: document.getElementById('alarmB'),
-  eff2: document.getElementById('eff2'),
-  budget2: document.getElementById('budget2'),
-  headroom2: document.getElementById('headroom2'),
+  stateA: el('stateA'),
+  stateB: el('stateB'),
+  grantA: el('grantA'),
+  grantB: el('grantB'),
+  clkEnA: el('clkEnA'),
+  clkEnB: el('clkEnB'),
+  eff: el('eff'),
+  budget: el('budget'),
+  headroom: el('headroom'),
+  frame: el('frame'),
+  tempA: el('tempA'),
+  tempB: el('tempB'),
+  actA: el('actA'),
+  actB: el('actB'),
+  stallA: el('stallA'),
+  stallB: el('stallB'),
+  reqA: el('reqA'),
+  reqB: el('reqB'),
+  phase: el('phase'),
+  mode: el('mode'),
+  alarmA: el('alarmA'),
+  alarmB: el('alarmB'),
+  eff2: el('eff2'),
+  budget2: el('budget2'),
+  headroom2: el('headroom2'),
+  serialPort: el('serialPort'),
 };
 
+const modeSelect = el('modeSelect');
+const extBudgetSelect = el('extBudgetSelect');
+const budgetInput = el('budgetInput');
+const reqAInput = el('reqAInput');
+const reqBInput = el('reqBInput');
+const tempAInput = el('tempAInput');
+const tempBInput = el('tempBInput');
+const actAToggle = el('actAToggle');
+const stallAToggle = el('stallAToggle');
+const actBToggle = el('actBToggle');
+const stallBToggle = el('stallBToggle');
+
+const scenarioSelect = el('scenarioSelect');
+const runScenarioBtn = el('runScenarioBtn');
+const stopScenarioBtn = el('stopScenarioBtn');
+const scenarioStatus = el('scenarioStatus');
+const scenarioSummary = el('scenarioSummary');
+const scenarioExplain = el('scenarioExplain');
+const modeExplain = el('modeExplain');
+const tbExplainList = el('tbExplainList');
+
+const navBtns = document.querySelectorAll('.nav-btn');
+const leftCol = document.querySelector('.left-col');
+const rightCol = document.querySelector('.right-col');
+
 const stateNames = ['SLEEP', 'LOW_POWER', 'ACTIVE', 'TURBO'];
+const stateClassMap = { SLEEP: 'sleep', LOW_POWER: 'low', ACTIVE: 'active', TURBO: 'turbo' };
+
+let ws = null;
+let pendingState = null;
+let renderQueued = false;
+let formDirty = false;
+let lastTrendFrame = -1;
+let lastTrendPushMs = 0;
+let scenarioRunning = false;
+let scenarioMetaByName = {};
+const fieldLockUntil = {};
+
+const ctrlIds = ['modeSelect', 'extBudgetSelect', 'budgetInput', 'reqAInput', 'reqBInput', 'tempAInput', 'tempBInput', 'actAToggle', 'stallAToggle', 'actBToggle', 'stallBToggle'];
+
+function clamp(v, lo, hi) {
+  return Math.max(lo, Math.min(hi, v));
+}
+
+function lockField(fieldId, ms = 2200) {
+  if (!fieldId) return;
+  fieldLockUntil[fieldId] = Date.now() + ms;
+}
+
+function isFieldLocked(fieldOrId) {
+  const id = typeof fieldOrId === 'string' ? fieldOrId : fieldOrId && fieldOrId.id;
+  if (!id) return false;
+  return (fieldLockUntil[id] || 0) > Date.now();
+}
+
+function lockFieldsForPayload(payload) {
+  const map = {
+    mode: 'modeSelect',
+    host_use_ext_budget: 'extBudgetSelect',
+    budget: 'budgetInput',
+    req_a: 'reqAInput',
+    req_b: 'reqBInput',
+    temp_a: 'tempAInput',
+    temp_b: 'tempBInput',
+    act_a: 'actAToggle',
+    stall_a: 'stallAToggle',
+    act_b: 'actBToggle',
+    stall_b: 'stallBToggle',
+  };
+  Object.keys(map).forEach((k) => {
+    if (Object.prototype.hasOwnProperty.call(payload, k)) {
+      lockField(map[k], k === 'mode' ? 3000 : 2200);
+    }
+  });
+}
+
+function updateModeExplanation(state) {
+  if (!modeExplain) return;
+  if (state.host_mode) {
+    modeExplain.textContent = 'Host-injected telemetry mode: control form values are written to FPGA and should reflect after command ACK.';
+    return;
+  }
+  modeExplain.textContent = 'Internal workload_sim mode: RTL simulation logic auto-drives activity, requests, and temperatures.';
+}
+
+function updateScenarioExplain() {
+  if (!scenarioExplain || !scenarioSelect) return;
+  const selected = scenarioMetaByName[scenarioSelect.value];
+  if (!selected) {
+    scenarioExplain.textContent = 'Scenario details and mapped testbench will appear here.';
+    return;
+  }
+  const desc = String(selected.description || '').replace(/\s+$/, '').replace(/[.]$/, '');
+  const source = selected.source_testbench ? ` Source testbench: ${selected.source_testbench}.` : '';
+  scenarioExplain.textContent = `${desc}.${source}`;
+}
 
 function decodeState(v) {
   return stateNames[v] || `S${v}`;
 }
 
-function stateFromGrant(grant) {
-  return decodeState(grant);
+function toInt(input, min, max, fallback) {
+  if (!input) return fallback;
+  const n = Number(input.value);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(min, Math.min(max, Math.trunc(n)));
 }
 
-const stateClassMap = { SLEEP: 'sleep', LOW_POWER: 'low', ACTIVE: 'active', TURBO: 'turbo' };
+function setIfIdle(inputEl, value) {
+  if (!inputEl) return;
+  if (document.activeElement === inputEl) return;
+  if (isFieldLocked(inputEl)) return;
+  inputEl.value = String(value);
+}
 
-const chartCtx = document.getElementById('trendChart');
-const trendChart = new Chart(chartCtx, {
-  type: 'line',
-  data: {
-    labels: [],
-    datasets: [
-      { label: 'Efficiency', data: [], borderColor: '#00c9a7', tension: 0.22 },
-      { label: 'Temp A', data: [], borderColor: '#ffa94d', tension: 0.22 },
-      { label: 'Temp B', data: [], borderColor: '#ff6f61', tension: 0.22 },
-    ]
-  },
-  options: {
-    responsive: true,
-    maintainAspectRatio: false,
-    animation: false,
-    scales: {
-      x: { ticks: { color: '#8fb0bd' }, grid: { color: 'rgba(255,255,255,0.07)' } },
-      y: { ticks: { color: '#8fb0bd' }, grid: { color: 'rgba(255,255,255,0.07)' } },
+function setCheckedIfIdle(inputEl, value) {
+  if (!inputEl) return;
+  if (document.activeElement === inputEl) return;
+  if (isFieldLocked(inputEl)) return;
+  inputEl.checked = !!value;
+}
+
+function makeLineChart(canvasId, datasets) {
+  const target = el(canvasId);
+  if (!target || typeof Chart === 'undefined') return null;
+  return new Chart(target, {
+    type: 'line',
+    data: {
+      labels: [],
+      datasets,
     },
-    plugins: {
-      legend: { labels: { color: '#cfe5ee' } }
-    }
-  }
-});
-
-// apply simple gradient fills for a more modern look
-try {
-  const ctx = chartCtx.getContext('2d');
-  const g0 = ctx.createLinearGradient(0, 0, 0, 300);
-  g0.addColorStop(0, 'rgba(0,201,167,0.26)');
-  g0.addColorStop(1, 'rgba(0,201,167,0.02)');
-  const g1 = ctx.createLinearGradient(0, 0, 0, 300);
-  g1.addColorStop(0, 'rgba(255,169,77,0.20)');
-  g1.addColorStop(1, 'rgba(255,169,77,0.02)');
-  const g2 = ctx.createLinearGradient(0, 0, 0, 300);
-  g2.addColorStop(0, 'rgba(255,111,97,0.18)');
-  g2.addColorStop(1, 'rgba(255,111,97,0.02)');
-  trendChart.data.datasets[0].backgroundColor = g0;
-  trendChart.data.datasets[0].borderWidth = 2;
-  trendChart.data.datasets[0].fill = true;
-  trendChart.data.datasets[1].backgroundColor = g1;
-  trendChart.data.datasets[1].borderWidth = 2;
-  trendChart.data.datasets[1].fill = true;
-  trendChart.data.datasets[2].backgroundColor = g2;
-  trendChart.data.datasets[2].borderWidth = 2;
-  trendChart.data.datasets[2].fill = true;
-  trendChart.update();
-} catch (e) {
-  // ignore if gradients fail
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: false,
+      normalized: true,
+      scales: {
+        x: {
+          ticks: { color: '#8fb0bd' },
+          grid: { color: 'rgba(255,255,255,0.06)' },
+        },
+        y: {
+          ticks: { color: '#8fb0bd' },
+          grid: { color: 'rgba(255,255,255,0.06)' },
+        },
+      },
+      plugins: {
+        legend: { labels: { color: '#cfe5ee' } },
+      },
+    },
+  });
 }
 
-function pushPoint(state) {
-  const t = new Date().toLocaleTimeString();
+const trendChart = makeLineChart('trendChart', [
+  { label: 'Efficiency', data: [], borderColor: '#00c9a7', tension: 0.20, pointRadius: 0 },
+  { label: 'Temp A', data: [], borderColor: '#ffa94d', tension: 0.20, pointRadius: 0 },
+  { label: 'Temp B', data: [], borderColor: '#ff6f61', tension: 0.20, pointRadius: 0 },
+]);
+
+const verifyChart = makeLineChart('verifyChart', [
+  { label: 'Grant A', data: [], borderColor: '#4fc3f7', tension: 0.15, pointRadius: 0 },
+  { label: 'Grant B', data: [], borderColor: '#81c784', tension: 0.15, pointRadius: 0 },
+  { label: 'Budget', data: [], borderColor: '#ffd54f', tension: 0.15, pointRadius: 0 },
+  { label: 'Efficiency', data: [], borderColor: '#ef5350', tension: 0.15, pointRadius: 0 },
+]);
+
+function setConnection(online, labelOverride = null) {
+  if (connDot) {
+    connDot.classList.toggle('online', !!online);
+    connDot.classList.toggle('offline', !online);
+  }
+  if (connText) {
+    connText.textContent = labelOverride || (online ? 'Connected' : 'Disconnected');
+  }
+}
+
+function updateAlarm(elm, on, title) {
+  if (!elm) return;
+  elm.classList.toggle('on', !!on);
+  elm.textContent = `${title}: ${on ? 'ON' : 'OFF'}`;
+}
+
+function showView(v) {
+  navBtns.forEach((b) => b.classList.toggle('active', b.dataset.view === v));
+  if (!leftCol || !rightCol) return;
+  if (v === 'dashboard') {
+    leftCol.style.display = '';
+    rightCol.style.display = '';
+    return;
+  }
+  if (v === 'telemetry') {
+    leftCol.style.display = '';
+    rightCol.style.display = 'none';
+    return;
+  }
+  if (v === 'controls') {
+    leftCol.style.display = 'none';
+    rightCol.style.display = '';
+  }
+}
+
+function applyTheme(t) {
+  document.documentElement.setAttribute('data-theme', t);
+  try {
+    localStorage.setItem('pwrgov-theme', t);
+  } catch (_e) {}
+  if (themeIcon) themeIcon.textContent = t === 'light' ? '☀️' : '🌙';
+}
+
+function pushTrendPoint(state) {
+  if (!trendChart) return;
+  const frame = state.frame_counter ?? 0;
+  const now = Date.now();
+  if (frame === lastTrendFrame) return;
+  if (now - lastTrendPushMs < 180) return;
+
+  lastTrendFrame = frame;
+  lastTrendPushMs = now;
+
   const labels = trendChart.data.labels;
-  labels.push(t);
-  trendChart.data.datasets[0].data.push(state.efficiency || 0);
-  trendChart.data.datasets[1].data.push(state.temp_a || 0);
-  trendChart.data.datasets[2].data.push(state.temp_b || 0);
-  while (labels.length > 60) {
+  labels.push(new Date().toLocaleTimeString());
+  trendChart.data.datasets[0].data.push(state.efficiency ?? 0);
+  trendChart.data.datasets[1].data.push(state.temp_a ?? 0);
+  trendChart.data.datasets[2].data.push(state.temp_b ?? 0);
+
+  while (labels.length > 80) {
     labels.shift();
-    trendChart.data.datasets.forEach(ds => ds.data.shift());
+    trendChart.data.datasets.forEach((ds) => ds.data.shift());
   }
-  trendChart.update();
+
+  trendChart.update('none');
 }
 
-function updateAlarm(el, on, title) {
-  el.classList.toggle('on', !!on);
-  el.textContent = `${title}: ${on ? 'ON' : 'OFF'}`;
-}
+function syncManualControlsFromState(state) {
+  if (!modeSelect) return;
+  const mode = state.host_mode ? 'host' : 'internal';
+  if (!formDirty && !isFieldLocked(modeSelect) && document.activeElement !== modeSelect) {
+    modeSelect.value = mode;
+  }
 
-function setConnection(online) {
-  connDot.classList.toggle('online', online);
-  connDot.classList.toggle('offline', !online);
-  connText.textContent = online ? 'Connected' : 'Disconnected';
+  if (formDirty) return;
+  if (mode !== 'host') return;
+
+  setIfIdle(budgetInput, state.current_budget ?? 0);
+  setIfIdle(reqAInput, state.req_a ?? 0);
+  setIfIdle(reqBInput, state.req_b ?? 0);
+  setIfIdle(tempAInput, state.temp_a ?? 0);
+  setIfIdle(tempBInput, state.temp_b ?? 0);
+  setCheckedIfIdle(actAToggle, state.act_a);
+  setCheckedIfIdle(stallAToggle, state.stall_a);
+  setCheckedIfIdle(actBToggle, state.act_b);
+  setCheckedIfIdle(stallBToggle, state.stall_b);
 }
 
 function render(state) {
   setConnection(!!state.connected);
+  updateModeExplanation(state);
 
-  fields.stateA.textContent = stateFromGrant(state.grant_a || 0);
-  fields.stateB.textContent = stateFromGrant(state.grant_b || 0);
+  const sA = decodeState(state.grant_a || 0);
+  const sB = decodeState(state.grant_b || 0);
+  if (fields.stateA) fields.stateA.textContent = sA;
+  if (fields.stateB) fields.stateB.textContent = sB;
 
-  // add nice class to the pill to visually show state
-  try {
-    const sA = fields.stateA.textContent || 'SLEEP';
-    const sB = fields.stateB.textContent || 'SLEEP';
-    Object.values(stateClassMap).forEach(c => fields.stateA.classList.remove(c));
-    Object.values(stateClassMap).forEach(c => fields.stateB.classList.remove(c));
+  if (fields.stateA) {
+    Object.values(stateClassMap).forEach((c) => fields.stateA.classList.remove(c));
     fields.stateA.classList.add(stateClassMap[sA] || 'sleep');
+  }
+  if (fields.stateB) {
+    Object.values(stateClassMap).forEach((c) => fields.stateB.classList.remove(c));
     fields.stateB.classList.add(stateClassMap[sB] || 'sleep');
-  } catch (e) {}
+  }
 
-  fields.grantA.textContent = state.grant_a ?? 0;
-  fields.grantB.textContent = state.grant_b ?? 0;
-  fields.clkEnA.textContent = state.clk_en_a ?? 0;
-  fields.clkEnB.textContent = state.clk_en_b ?? 0;
+  if (fields.grantA) fields.grantA.textContent = state.grant_a ?? 0;
+  if (fields.grantB) fields.grantB.textContent = state.grant_b ?? 0;
+  if (fields.clkEnA) fields.clkEnA.textContent = state.clk_en_a ?? 0;
+  if (fields.clkEnB) fields.clkEnB.textContent = state.clk_en_b ?? 0;
 
-  fields.eff.textContent = state.efficiency ?? 0;
-  fields.budget.textContent = state.current_budget ?? 0;
-  fields.headroom.textContent = state.budget_headroom ?? 0;
-  // mirror metrics into right column
+  if (fields.eff) fields.eff.textContent = state.efficiency ?? 0;
+  if (fields.budget) fields.budget.textContent = state.current_budget ?? 0;
+  if (fields.headroom) fields.headroom.textContent = state.budget_headroom ?? 0;
   if (fields.eff2) fields.eff2.textContent = state.efficiency ?? 0;
   if (fields.budget2) fields.budget2.textContent = state.current_budget ?? 0;
   if (fields.headroom2) fields.headroom2.textContent = state.budget_headroom ?? 0;
-  fields.frame.textContent = state.frame_counter ?? 0;
+  if (fields.frame) fields.frame.textContent = state.frame_counter ?? 0;
 
-  fields.tempA.textContent = state.temp_a ?? 0;
-  fields.tempB.textContent = state.temp_b ?? 0;
-  fields.actA.textContent = state.act_a ?? 0;
-  fields.actB.textContent = state.act_b ?? 0;
-  fields.stallA.textContent = state.stall_a ?? 0;
-  fields.stallB.textContent = state.stall_b ?? 0;
-  fields.reqA.textContent = state.req_a ?? 0;
-  fields.reqB.textContent = state.req_b ?? 0;
-  fields.phase.textContent = state.phase ?? 0;
-  fields.mode.textContent = state.host_mode ? 'host' : 'internal';
+  if (fields.tempA) fields.tempA.textContent = state.temp_a ?? 0;
+  if (fields.tempB) fields.tempB.textContent = state.temp_b ?? 0;
+  if (fields.actA) fields.actA.textContent = state.act_a ?? 0;
+  if (fields.actB) fields.actB.textContent = state.act_b ?? 0;
+  if (fields.stallA) fields.stallA.textContent = state.stall_a ?? 0;
+  if (fields.stallB) fields.stallB.textContent = state.stall_b ?? 0;
+  if (fields.reqA) fields.reqA.textContent = state.req_a ?? 0;
+  if (fields.reqB) fields.reqB.textContent = state.req_b ?? 0;
+  if (fields.phase) fields.phase.textContent = state.phase ?? 0;
+  if (fields.mode) fields.mode.textContent = state.host_mode ? 'host' : 'internal';
+  if (fields.serialPort) fields.serialPort.textContent = state.serial_port || '-';
 
   updateAlarm(fields.alarmA, state.alarm_a, 'Alarm A');
   updateAlarm(fields.alarmB, state.alarm_b, 'Alarm B');
 
-  // populate control form values with incoming telemetry (unless user edited the form)
-  try { populateControlFormFromState(state); } catch (e) {}
-
-  pushPoint(state);
-
-  // small highlight animation for metrics
-  try {
-    const els = [fields.eff, fields.budget, fields.headroom];
-    els.forEach(el => { if (!el) return; el.animate([{ transform: 'translateY(-6px)' }, { transform: 'translateY(0)' }], { duration: 260, easing: 'cubic-bezier(.2,.9,.2,1)' }); });
-  } catch (e) {}
+  syncManualControlsFromState(state);
+  pushTrendPoint(state);
 }
 
-/* THEME HANDLING */
-function applyTheme(t) {
-  document.documentElement.setAttribute('data-theme', t);
-  try { localStorage.setItem('pwrgov-theme', t); } catch (e) {}
-  if (themeIcon) themeIcon.textContent = t === 'light' ? '☀️' : '🌙';
-}
-
-// initialize theme from localStorage or system
-try {
-  const saved = localStorage.getItem('pwrgov-theme');
-  const preferLight = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches;
-  applyTheme(saved || (preferLight ? 'light' : 'dark'));
-} catch (e) { applyTheme('dark'); }
-
-if (themeToggle) {
-  themeToggle.addEventListener('click', () => {
-    const cur = document.documentElement.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
-    applyTheme(cur);
+function queueRender(state) {
+  pendingState = state;
+  if (renderQueued) return;
+  renderQueued = true;
+  requestAnimationFrame(() => {
+    renderQueued = false;
+    if (!pendingState) return;
+    render(pendingState);
+    pendingState = null;
   });
 }
 
-/* 3D tilt for cards */
-function initTilt() {
-  const cards = document.querySelectorAll('.card');
-  cards.forEach(card => {
-    let raf = null;
-    let last = null;
-
-    function onFrame() {
-      if (!last) { raf = null; return; }
-      const e = last; last = null; raf = null;
-      const rect = card.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const y = e.clientY - rect.top;
-      const px = (x / rect.width) - 0.5;
-      const py = (y / rect.height) - 0.5;
-      const rotY = (px * 18).toFixed(2);
-      const rotX = (-py * 10).toFixed(2);
-      const s = 1.02;
-      card.style.transform = `perspective(900px) rotateX(${rotX}deg) rotateY(${rotY}deg) scale(${s})`;
-      card.style.boxShadow = `${-rotY/2}px ${rotX/2}px 34px rgba(6,20,26,0.48), 0 12px 40px rgba(2,6,10,0.35)`;
-    }
-
-    card.addEventListener('pointermove', (ev) => { last = ev; if (!raf) raf = requestAnimationFrame(onFrame); }, { passive: true });
-    card.addEventListener('pointerleave', () => { if (raf) { cancelAnimationFrame(raf); raf = null; } card.style.transform = ''; card.style.boxShadow = ''; });
-  });
-}
-
-// small staggered entrance
-function entranceAnimate() {
-  const cards = Array.from(document.querySelectorAll('.card'));
-  cards.forEach((c, i) => { c.style.opacity = 0; c.style.transform += ' translateY(8px)'; setTimeout(()=>{ c.style.transition = 'opacity .45s ease, transform .55s cubic-bezier(.2,.9,.2,1)'; c.style.opacity = 1; c.style.transform = c.style.transform.replace(' translateY(8px)',''); }, 60 * i); });
-}
-
-let ws;
 function connectWs() {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   ws = new WebSocket(`${proto}://${location.host}/ws`);
 
-  ws.onopen = () => {
-    setConnection(true);
-  };
-
+  ws.onopen = () => setConnection(true);
   ws.onmessage = (ev) => {
     try {
-      const state = JSON.parse(ev.data);
-      render(state);
+      queueRender(JSON.parse(ev.data));
     } catch (e) {
       console.error(e);
     }
   };
-
   ws.onclose = () => {
     setConnection(false);
-    setTimeout(connectWs, 1500);
+    setTimeout(connectWs, 1200);
   };
 }
 
 async function pollFallback() {
   try {
     const res = await fetch('/api/state');
-    if (res.ok) {
-      const state = await res.json();
-      setConnection(true);
-      render(state);
-    }
+    if (!res.ok) return;
+    queueRender(await res.json());
   } catch (_e) {
     setConnection(false);
   }
 }
 
-setInterval(() => {
-  if (!ws || ws.readyState !== WebSocket.OPEN) {
-    pollFallback();
+async function sendControlPayload(payload) {
+  const submitBtn = document.querySelector('#ctrlForm button[type="submit"]');
+  lockFieldsForPayload(payload);
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Sending...';
   }
-}, 1200);
-
-const form = document.getElementById('ctrlForm');
-form.addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const submitBtn = form.querySelector('button[type="submit"]');
-  if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Sending...'; }
-  const payload = {
-    mode: document.getElementById('modeSelect').value,
-    host_use_ext_budget: document.getElementById('extBudgetSelect').value === 'true',
-    budget: Number(document.getElementById('budgetInput').value),
-    req_a: Number(document.getElementById('reqAInput').value),
-    req_b: Number(document.getElementById('reqBInput').value),
-    temp_a: Number(document.getElementById('tempAInput').value),
-    temp_b: Number(document.getElementById('tempBInput').value),
-    act_a: document.getElementById('actAToggle').checked,
-    stall_a: document.getElementById('stallAToggle').checked,
-    act_b: document.getElementById('actBToggle').checked,
-    stall_b: document.getElementById('stallBToggle').checked,
-  };
 
   try {
     const res = await fetch('/api/control', {
@@ -299,213 +396,361 @@ form.addEventListener('submit', async (e) => {
       body: JSON.stringify(payload),
     });
     const out = await res.json();
-    ack.textContent = JSON.stringify(out, null, 2);
-  } catch (err) {
-    ack.textContent = `control send failed: ${err}`;
-  }
-  if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Send Control Command'; }
-});
-
-connectWs();
-pollFallback();
-initTilt();
-entranceAnimate();
-// NAV / VIEW handling
-const navBtns = document.querySelectorAll('.nav-btn');
-const leftCol = document.querySelector('.left-col');
-const rightCol = document.querySelector('.right-col');
-function showView(v) {
-  navBtns.forEach(b => b.classList.toggle('active', b.dataset.view === v));
-  if (v === 'dashboard') {
-    if (leftCol) leftCol.style.display = '';
-    if (rightCol) rightCol.style.display = '';
-  } else if (v === 'telemetry') {
-    if (leftCol) leftCol.style.display = '';
-    if (rightCol) rightCol.style.display = 'none';
-  } else if (v === 'controls') {
-    if (leftCol) leftCol.style.display = 'none';
-    if (rightCol) rightCol.style.display = '';
-  }
-}
-navBtns.forEach(b => { b.addEventListener('click', (e)=>{ const v = b.dataset.view || 'dashboard'; showView(v); }); });
-// default
-showView('dashboard');
-
-// reconnect on click of connection dot
-connDot && connDot.addEventListener('click', () => {
-  try {
-    if (ws && ws.readyState === WebSocket.OPEN) { ws.close(); setTimeout(connectWs, 400); }
-    else connectWs();
-  } catch (e) { connectWs(); }
-});
-
-// form dirty tracking - avoid clobbering user edits
-let formDirty = false;
-const ctrlIds = ['modeSelect','extBudgetSelect','budgetInput','reqAInput','reqBInput','tempAInput','tempBInput','actAToggle','stallAToggle','actBToggle','stallBToggle'];
-ctrlIds.forEach(id => {
-  const el = document.getElementById(id);
-  if (!el) return;
-  el.addEventListener('input', ()=> { formDirty = true; });
-  el.addEventListener('change', ()=> { formDirty = true; });
-});
-
-// helper to populate control form from state (if not dirty)
-function populateControlFormFromState(state) {
-  if (formDirty) return;
-  try {
-    const modeEl = document.getElementById('modeSelect');
-    if (modeEl) modeEl.value = state.host_mode ? 'host' : 'internal';
-    const budgetEl = document.getElementById('budgetInput');
-    if (budgetEl) budgetEl.value = state.current_budget ?? budgetEl.value;
-    const reqAEl = document.getElementById('reqAInput');
-    if (reqAEl) reqAEl.value = state.req_a ?? reqAEl.value;
-    const reqBEl = document.getElementById('reqBInput');
-    if (reqBEl) reqBEl.value = state.req_b ?? reqBEl.value;
-    const tempAEl = document.getElementById('tempAInput');
-    if (tempAEl) tempAEl.value = state.temp_a ?? tempAEl.value;
-    const tempBEl = document.getElementById('tempBInput');
-    if (tempBEl) tempBEl.value = state.temp_b ?? tempBEl.value;
-    const actAEl = document.getElementById('actAToggle');
-    if (actAEl) actAEl.checked = !!state.act_a;
-    const stallAEl = document.getElementById('stallAToggle');
-    if (stallAEl) stallAEl.checked = !!state.stall_a;
-    const actBEl = document.getElementById('actBToggle');
-    if (actBEl) actBEl.checked = !!state.act_b;
-    const stallBEl = document.getElementById('stallBToggle');
-    if (stallBEl) stallBEl.checked = !!state.stall_b;
-    // extBudgetSelect may not be present in state; skip
-  } catch (e) {}
-}
-
-// expose a small reset-dirty button on double-click of the controls area
-const controlsCard = document.querySelector('.controls-card');
-if (controlsCard) {
-  controlsCard.addEventListener('dblclick', () => { formDirty = false; controlsCard.animate([{ transform: 'scale(1.02)' }, { transform: 'scale(1)' }], { duration: 200 }); });
-}
-
-// Helper to POST control payloads and update UI/ack
-async function sendControlPayload(payload) {
-  const submitBtn = form.querySelector('button[type="submit"]');
-  if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Sending...'; }
-  try {
-    // demo mode: simulate locally
-    if (window.demoMode) {
-      // update demoState from payload
-      try {
-        Object.keys(payload).forEach(k => {
-          const v = payload[k];
-          if (k === 'mode') demoState.host_mode = (v === 'host') ? 1 : 0;
-          else if (k === 'host_use_ext_budget') demoState.use_ext_budget = !!v;
-          else if (k === 'budget') demoState.current_budget = Number(v);
-          else if (k === 'req_a') demoState.req_a = Number(v);
-          else if (k === 'req_b') demoState.req_b = Number(v);
-          else if (k === 'temp_a') demoState.temp_a = Number(v);
-          else if (k === 'temp_b') demoState.temp_b = Number(v);
-          else if (k === 'act_a') demoState.act_a = v ? 1 : 0;
-          else if (k === 'act_b') demoState.act_b = v ? 1 : 0;
-          else if (k === 'stall_a') demoState.stall_a = v ? 1 : 0;
-          else if (k === 'stall_b') demoState.stall_b = v ? 1 : 0;
-        });
-      } catch (e) {}
-      demoState.frame_counter = (demoState.frame_counter || 0) + 1;
-      render(demoState);
-      const out = { ok: true, sent: Object.keys(payload).length };
-      ack.textContent = JSON.stringify(out, null, 2);
-      formDirty = false;
-      return out;
+    if (!res.ok) {
+      throw new Error(out.detail || `HTTP ${res.status}`);
     }
-
-    const res = await fetch('/api/control', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-    const out = await res.json();
-    ack.textContent = JSON.stringify(out, null, 2);
-    // refresh state snapshot
-    try {
-      const s = await fetch('/api/state');
-      if (s.ok) {
-        const st = await s.json();
-        render(st);
-      }
-    } catch (e) {}
+    if (out.state) queueRender(out.state);
+    if (ack) ack.textContent = JSON.stringify(out, null, 2);
     formDirty = false;
     return out;
   } catch (err) {
-    ack.textContent = `control send failed: ${err}`;
+    if (ack) ack.textContent = `control send failed: ${err}`;
     throw err;
   } finally {
-    if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Send Control Command'; }
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Send Control Command';
+    }
   }
 }
 
-// Demo mode client-side telemetry generator
-window.demoMode = false;
-let demoTimer = null;
-let demoState = null;
-function startDemo() {
-  window.demoMode = true;
-  demoState = {
-    ts: Date.now()/1000, connected: true, frame_counter: 0, host_mode: 0,
-    alarm_a:0, alarm_b:0, clk_en_a:1, clk_en_b:1, grant_a:0, grant_b:0,
-    current_budget:4, budget_headroom:3, efficiency:0, temp_a:30, temp_b:30,
-    act_a:0, stall_a:0, act_b:0, stall_b:0, req_a:0, req_b:0, phase:0
-  };
-  if (connDot) connDot.classList.add('online');
-  if (connText) connText.textContent = 'Demo';
-  demoTimer = setInterval(()=>{
-    demoState.frame_counter += 1;
-    demoState.efficiency = Math.round( (Math.sin(demoState.frame_counter/6) + 1) * 50 );
-    demoState.temp_a = clamp(30 + Math.round(6*Math.sin(demoState.frame_counter/8)), 20, 80);
-    demoState.temp_b = clamp(30 + Math.round(6*Math.cos(demoState.frame_counter/10)), 20, 80);
-    // toggle random activity
-    demoState.act_a = (demoState.frame_counter % 7 < 4) ? 1 : 0;
-    demoState.act_b = (demoState.frame_counter % 11 < 6) ? 1 : 0;
-    demoState.grant_a = demoState.act_a ? 2 : 0;
-    demoState.grant_b = demoState.act_b ? 1 : 0;
-    render(demoState);
-  }, 600);
+async function loadScenarios() {
+  if (!scenarioSelect) return;
+  scenarioSelect.innerHTML = '';
+  scenarioMetaByName = {};
+  try {
+    const res = await fetch('/api/scenarios');
+    const data = await res.json();
+    const scenarios = data.scenarios || [];
+    scenarios.forEach((s) => {
+      scenarioMetaByName[s.name] = s;
+      const opt = document.createElement('option');
+      opt.value = s.name;
+      opt.textContent = `${s.name} (${s.steps} steps)`;
+      opt.title = s.description;
+      scenarioSelect.appendChild(opt);
+    });
+    updateScenarioExplain();
+    if (!scenarios.length && scenarioStatus) {
+      scenarioStatus.textContent = 'No scenarios available from backend.';
+    }
+  } catch (e) {
+    if (scenarioStatus) scenarioStatus.textContent = `Scenario list failed: ${e}`;
+  }
 }
 
-function stopDemo() {
-  window.demoMode = false;
-  if (demoTimer) { clearInterval(demoTimer); demoTimer = null; }
-  if (connDot) connDot.classList.remove('online');
-  if (connText) connText.textContent = 'Disconnected';
-}
-
-// Demo toggle binding
-const demoToggle = el('demoToggle');
-if (demoToggle) {
-  demoToggle.addEventListener('change', (e)=>{
-    if (e.target.checked) startDemo(); else stopDemo();
+function renderTestbenchNotes(list) {
+  if (!tbExplainList) return;
+  tbExplainList.innerHTML = '';
+  if (!list.length) {
+    const li = document.createElement('li');
+    li.textContent = 'No testbench notes returned by backend.';
+    tbExplainList.appendChild(li);
+    return;
+  }
+  list.forEach((tb) => {
+    const li = document.createElement('li');
+    li.textContent = `${tb.name}: ${tb.summary}`;
+    li.title = tb.focus || '';
+    tbExplainList.appendChild(li);
   });
 }
 
-// Quick-action bindings
-function el(id) { return document.getElementById(id); }
+async function loadTestbenchNotes() {
+  try {
+    const res = await fetch('/api/testbenches');
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}`);
+    }
+    const data = await res.json();
+    const list = data.testbenches || [];
+    renderTestbenchNotes(list);
+  } catch (e) {
+    renderTestbenchNotes([]);
+    if (ack) ack.textContent = `backend testbench notes unavailable: ${e}`;
+  }
+}
 
-el('btnToggleMode') && el('btnToggleMode').addEventListener('click', async () => {
-  const modeEl = el('modeSelect'); if (!modeEl) return;
-  const next = modeEl.value === 'internal' ? 'host' : 'internal'; modeEl.value = next; await sendControlPayload({ mode: next });
+function renderScenarioTimeline(result) {
+  if (!verifyChart) return;
+  const timeline = result.timeline || [];
+  verifyChart.data.labels = timeline.map((p) => (p.t_ms / 1000).toFixed(1));
+  verifyChart.data.datasets[0].data = timeline.map((p) => p.grant_a ?? 0);
+  verifyChart.data.datasets[1].data = timeline.map((p) => p.grant_b ?? 0);
+  verifyChart.data.datasets[2].data = timeline.map((p) => p.current_budget ?? 0);
+  verifyChart.data.datasets[3].data = timeline.map((p) => p.efficiency ?? 0);
+  verifyChart.update('none');
+
+  if (scenarioSummary) {
+    scenarioSummary.textContent = JSON.stringify(
+      {
+        name: result.name,
+        description: result.description,
+        status: result.status || 'completed',
+        points: result.points,
+        sample_ms: result.sample_ms,
+        final_state: result.final_state,
+      },
+      null,
+      2,
+    );
+  }
+
+  if (result.final_state) {
+    queueRender(result.final_state);
+  }
+}
+
+function bindQuickButtons() {
+  const handlers = {
+    btnToggleMode: async () => {
+      if (!modeSelect) return;
+      const next = modeSelect.value === 'internal' ? 'host' : 'internal';
+      modeSelect.value = next;
+      await sendControlPayload({ mode: next });
+    },
+    btnToggleExtBudget: async () => {
+      if (!extBudgetSelect) return;
+      const next = extBudgetSelect.value !== 'true';
+      extBudgetSelect.value = next ? 'true' : 'false';
+      await sendControlPayload({ host_use_ext_budget: next });
+    },
+    btnReqAPlus: async () => {
+      if (!reqAInput) return;
+      reqAInput.value = String(clamp(Number(reqAInput.value || 0) + 1, 0, 3));
+      await sendControlPayload({ req_a: Number(reqAInput.value) });
+    },
+    btnReqAMinus: async () => {
+      if (!reqAInput) return;
+      reqAInput.value = String(clamp(Number(reqAInput.value || 0) - 1, 0, 3));
+      await sendControlPayload({ req_a: Number(reqAInput.value) });
+    },
+    btnReqBPlus: async () => {
+      if (!reqBInput) return;
+      reqBInput.value = String(clamp(Number(reqBInput.value || 0) + 1, 0, 3));
+      await sendControlPayload({ req_b: Number(reqBInput.value) });
+    },
+    btnReqBMinus: async () => {
+      if (!reqBInput) return;
+      reqBInput.value = String(clamp(Number(reqBInput.value || 0) - 1, 0, 3));
+      await sendControlPayload({ req_b: Number(reqBInput.value) });
+    },
+    btnBudgetPlus: async () => {
+      if (!budgetInput) return;
+      budgetInput.value = String(clamp(Number(budgetInput.value || 0) + 1, 0, 7));
+      await sendControlPayload({ budget: Number(budgetInput.value) });
+    },
+    btnBudgetMinus: async () => {
+      if (!budgetInput) return;
+      budgetInput.value = String(clamp(Number(budgetInput.value || 0) - 1, 0, 7));
+      await sendControlPayload({ budget: Number(budgetInput.value) });
+    },
+    btnTempAPlus: async () => {
+      if (!tempAInput) return;
+      tempAInput.value = String(clamp(Number(tempAInput.value || 0) + 1, 0, 127));
+      await sendControlPayload({ temp_a: Number(tempAInput.value) });
+    },
+    btnTempAMinus: async () => {
+      if (!tempAInput) return;
+      tempAInput.value = String(clamp(Number(tempAInput.value || 0) - 1, 0, 127));
+      await sendControlPayload({ temp_a: Number(tempAInput.value) });
+    },
+    btnTempBPlus: async () => {
+      if (!tempBInput) return;
+      tempBInput.value = String(clamp(Number(tempBInput.value || 0) + 1, 0, 127));
+      await sendControlPayload({ temp_b: Number(tempBInput.value) });
+    },
+    btnTempBMinus: async () => {
+      if (!tempBInput) return;
+      tempBInput.value = String(clamp(Number(tempBInput.value || 0) - 1, 0, 127));
+      await sendControlPayload({ temp_b: Number(tempBInput.value) });
+    },
+    btnSyncState: async () => {
+      const res = await fetch('/api/state');
+      if (!res.ok) return;
+      queueRender(await res.json());
+      if (ack) ack.textContent = 'State synced';
+    },
+    btnResetDirty: async () => {
+      formDirty = false;
+      if (ack) ack.textContent = 'Form unlocked';
+    },
+  };
+
+  Object.keys(handlers).forEach((id) => {
+    const target = el(id);
+    if (!target) return;
+    target.addEventListener('click', (ev) => {
+      ev.preventDefault();
+      handlers[id]().catch((e) => {
+        if (ack) ack.textContent = `action failed: ${e}`;
+      });
+    });
+  });
+}
+
+if (themeToggle) {
+  themeToggle.addEventListener('click', () => {
+    const cur = document.documentElement.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
+    applyTheme(cur);
+  });
+}
+
+try {
+  const saved = localStorage.getItem('pwrgov-theme');
+  const preferLight = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches;
+  applyTheme(saved || (preferLight ? 'light' : 'dark'));
+} catch (_e) {
+  applyTheme('dark');
+}
+
+ctrlIds.forEach((id) => {
+  const target = el(id);
+  if (!target) return;
+  target.addEventListener('input', () => {
+    formDirty = true;
+    lockField(id, 2600);
+  });
+  target.addEventListener('change', () => {
+    formDirty = true;
+    lockField(id, 2600);
+  });
 });
 
-el('btnToggleExtBudget') && el('btnToggleExtBudget').addEventListener('click', async () => {
-  const e = el('extBudgetSelect'); if (!e) return; const next = e.value === 'true' ? false : true; e.value = next ? 'true' : 'false'; await sendControlPayload({ host_use_ext_budget: next });
-});
+if (connDot) {
+  connDot.addEventListener('click', () => {
+    try {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.close();
+      } else {
+        connectWs();
+      }
+    } catch (_e) {
+      connectWs();
+    }
+  });
+}
 
-function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+if (navBtns && navBtns.length) {
+  navBtns.forEach((b) => {
+    b.addEventListener('click', () => {
+      showView(b.dataset.view || 'dashboard');
+    });
+  });
+}
+showView('dashboard');
 
-el('btnReqAPlus') && el('btnReqAPlus').addEventListener('click', async () => { const inp = el('reqAInput'); if (!inp) return; const v = clamp(Number(inp.value || 0) + 1, 0, 3); inp.value = v; await sendControlPayload({ req_a: v }); });
-el('btnReqAMinus') && el('btnReqAMinus').addEventListener('click', async () => { const inp = el('reqAInput'); if (!inp) return; const v = clamp(Number(inp.value || 0) - 1, 0, 3); inp.value = v; await sendControlPayload({ req_a: v }); });
-el('btnReqBPlus') && el('btnReqBPlus').addEventListener('click', async () => { const inp = el('reqBInput'); if (!inp) return; const v = clamp(Number(inp.value || 0) + 1, 0, 3); inp.value = v; await sendControlPayload({ req_b: v }); });
-el('btnReqBMinus') && el('btnReqBMinus').addEventListener('click', async () => { const inp = el('reqBInput'); if (!inp) return; const v = clamp(Number(inp.value || 0) - 1, 0, 3); inp.value = v; await sendControlPayload({ req_b: v }); });
+const demoToggle = el('demoToggle');
+if (demoToggle) {
+  demoToggle.checked = false;
+  demoToggle.disabled = true;
+  demoToggle.title = 'Demo mode disabled: all dashboard data comes from backend only.';
+}
 
-el('btnBudgetPlus') && el('btnBudgetPlus').addEventListener('click', async () => { const inp = el('budgetInput'); if (!inp) return; const v = clamp(Number(inp.value || 0) + 1, 0, 7); inp.value = v; await sendControlPayload({ budget: v }); });
-el('btnBudgetMinus') && el('btnBudgetMinus').addEventListener('click', async () => { const inp = el('budgetInput'); if (!inp) return; const v = clamp(Number(inp.value || 0) - 1, 0, 7); inp.value = v; await sendControlPayload({ budget: v }); });
+const form = el('ctrlForm');
+if (form) {
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const payload = {
+      mode: modeSelect ? modeSelect.value : 'internal',
+      host_use_ext_budget: extBudgetSelect ? extBudgetSelect.value === 'true' : false,
+      budget: toInt(budgetInput, 0, 7, 4),
+      req_a: toInt(reqAInput, 0, 3, 0),
+      req_b: toInt(reqBInput, 0, 3, 0),
+      temp_a: toInt(tempAInput, 0, 127, 30),
+      temp_b: toInt(tempBInput, 0, 127, 30),
+      act_a: !!(actAToggle && actAToggle.checked),
+      stall_a: !!(stallAToggle && stallAToggle.checked),
+      act_b: !!(actBToggle && actBToggle.checked),
+      stall_b: !!(stallBToggle && stallBToggle.checked),
+    };
+    await sendControlPayload(payload);
+  });
+}
 
-el('btnTempAPlus') && el('btnTempAPlus').addEventListener('click', async () => { const inp = el('tempAInput'); if (!inp) return; const v = clamp(Number(inp.value || 0) + 1, 0, 127); inp.value = v; await sendControlPayload({ temp_a: v }); });
-el('btnTempAMinus') && el('btnTempAMinus').addEventListener('click', async () => { const inp = el('tempAInput'); if (!inp) return; const v = clamp(Number(inp.value || 0) - 1, 0, 127); inp.value = v; await sendControlPayload({ temp_a: v }); });
-el('btnTempBPlus') && el('btnTempBPlus').addEventListener('click', async () => { const inp = el('tempBInput'); if (!inp) return; const v = clamp(Number(inp.value || 0) + 1, 0, 127); inp.value = v; await sendControlPayload({ temp_b: v }); });
-el('btnTempBMinus') && el('btnTempBMinus').addEventListener('click', async () => { const inp = el('tempBInput'); if (!inp) return; const v = clamp(Number(inp.value || 0) - 1, 0, 127); inp.value = v; await sendControlPayload({ temp_b: v }); });
+if (scenarioSelect) {
+  scenarioSelect.addEventListener('change', () => {
+    updateScenarioExplain();
+  });
+}
 
-el('btnSyncState') && el('btnSyncState').addEventListener('click', async () => { try { const res = await fetch('/api/state'); if (res.ok) { const st = await res.json(); render(st); ack.textContent = 'State synced'; } } catch (e) { ack.textContent = `sync failed: ${e}`; } });
+function setScenarioRunUi(running) {
+  scenarioRunning = !!running;
+  if (runScenarioBtn) {
+    runScenarioBtn.disabled = scenarioRunning;
+    runScenarioBtn.textContent = scenarioRunning ? 'Running...' : 'Run Scenario';
+  }
+  if (stopScenarioBtn) {
+    stopScenarioBtn.disabled = !scenarioRunning;
+  }
+}
 
-el('btnResetDirty') && el('btnResetDirty').addEventListener('click', () => { formDirty = false; ack.textContent = 'Form unlocked'; });
+if (runScenarioBtn) {
+  runScenarioBtn.addEventListener('click', async () => {
+    if (scenarioRunning) return;
+    const name = scenarioSelect ? scenarioSelect.value : '';
+    if (!name) {
+      if (scenarioStatus) scenarioStatus.textContent = 'Select a scenario first.';
+      return;
+    }
+
+    setScenarioRunUi(true);
+    if (scenarioStatus) scenarioStatus.textContent = `Running ${name} on FPGA...`;
+
+    try {
+      const res = await fetch('/api/scenarios/run', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, sample_ms: 200 }),
+      });
+      const out = await res.json();
+      if (!res.ok) throw new Error(out.detail || `HTTP ${res.status}`);
+      renderScenarioTimeline(out);
+      if (scenarioStatus) {
+        if (out.status === 'stopped') {
+          scenarioStatus.textContent = `Stopped ${name}. Returned to internal workload_sim mode.`;
+        } else {
+          scenarioStatus.textContent = `Completed ${name}: ${out.points} samples captured. Returned to internal workload_sim mode.`;
+        }
+      }
+    } catch (e) {
+      if (scenarioStatus) scenarioStatus.textContent = `Scenario failed: ${e}`;
+    }
+
+    setScenarioRunUi(false);
+  });
+}
+
+if (stopScenarioBtn) {
+  stopScenarioBtn.addEventListener('click', async () => {
+    if (!scenarioRunning) return;
+    stopScenarioBtn.disabled = true;
+    if (scenarioStatus) scenarioStatus.textContent = 'Stopping scenario and returning to internal workload_sim...';
+    try {
+      const res = await fetch('/api/scenarios/stop', {
+        method: 'POST',
+      });
+      const out = await res.json();
+      if (!res.ok) throw new Error(out.detail || `HTTP ${res.status}`);
+      if (out.state) queueRender(out.state);
+      if (scenarioStatus) scenarioStatus.textContent = out.message || 'Stop requested.';
+    } catch (e) {
+      if (scenarioStatus) scenarioStatus.textContent = `Stop request failed: ${e}`;
+    } finally {
+      stopScenarioBtn.disabled = !scenarioRunning;
+    }
+  });
+}
+
+setInterval(() => {
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    pollFallback();
+  }
+}, 1500);
+
+bindQuickButtons();
+connectWs();
+pollFallback();
+loadScenarios();
+loadTestbenchNotes();
+setScenarioRunUi(false);
