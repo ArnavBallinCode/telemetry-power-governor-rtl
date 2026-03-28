@@ -18,9 +18,9 @@
         <div class="name">PwrGov-X<br/><span class="sm">Telemetry</span></div>
       </div>
       <nav class="nav">
-        <button class="nav-btn active">Dashboard</button>
-        <button class="nav-btn">Telemetry</button>
-        <button class="nav-btn">Controls</button>
+        <button class="nav-btn active" data-view="dashboard">Dashboard</button>
+        <button class="nav-btn" data-view="telemetry">Telemetry</button>
+        <button class="nav-btn" data-view="controls">Controls</button>
       </nav>
 
       <div class="sidebar-bottom">
@@ -28,7 +28,10 @@
           <span id="connDot" class="dot offline"></span>
           <span id="connText">Disconnected</span>
         </div>
-        <button id="themeToggle" class="theme-toggle" title="Toggle theme"><span id="themeIcon">🌙</span></button>
+        <div class="sidebar-actions">
+          <label class="demo-toggle"><input id="demoToggle" type="checkbox" /> Demo</label>
+          <button id="themeToggle" class="theme-toggle" title="Toggle theme"><span id="themeIcon">🌙</span></button>
+        </div>
       </div>
     </aside>
 
@@ -158,7 +161,23 @@
 
               <button type="submit">Send Control Command</button>
             </form>
-            <pre id="ack" class="ack">Waiting for command...</pre>
+              <div class="quick-actions">
+                <button id="btnToggleMode" class="qa">Toggle Mode</button>
+                <button id="btnToggleExtBudget" class="qa">Toggle Ext Budget</button>
+                <button id="btnReqAPlus" class="qa">Req A +</button>
+                <button id="btnReqAMinus" class="qa">Req A -</button>
+                <button id="btnReqBPlus" class="qa">Req B +</button>
+                <button id="btnReqBMinus" class="qa">Req B -</button>
+                <button id="btnBudgetPlus" class="qa">Budget +</button>
+                <button id="btnBudgetMinus" class="qa">Budget -</button>
+                <button id="btnTempAPlus" class="qa">Temp A +</button>
+                <button id="btnTempAMinus" class="qa">Temp A -</button>
+                <button id="btnTempBPlus" class="qa">Temp B +</button>
+                <button id="btnTempBMinus" class="qa">Temp B -</button>
+                <button id="btnSyncState" class="qa">Sync State</button>
+                <button id="btnResetDirty" class="qa">Reset Edits</button>
+              </div>
+              <pre id="ack" class="ack">Waiting for command...</pre>
           </div>
         </aside>
       </section>

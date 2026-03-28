@@ -164,6 +164,9 @@ function render(state) {
   updateAlarm(fields.alarmA, state.alarm_a, 'Alarm A');
   updateAlarm(fields.alarmB, state.alarm_b, 'Alarm B');
 
+  // populate control form values with incoming telemetry (unless user edited the form)
+  try { populateControlFormFromState(state); } catch (e) {}
+
   pushPoint(state);
 
   // small highlight animation for metrics
@@ -307,3 +310,202 @@ connectWs();
 pollFallback();
 initTilt();
 entranceAnimate();
+// NAV / VIEW handling
+const navBtns = document.querySelectorAll('.nav-btn');
+const leftCol = document.querySelector('.left-col');
+const rightCol = document.querySelector('.right-col');
+function showView(v) {
+  navBtns.forEach(b => b.classList.toggle('active', b.dataset.view === v));
+  if (v === 'dashboard') {
+    if (leftCol) leftCol.style.display = '';
+    if (rightCol) rightCol.style.display = '';
+  } else if (v === 'telemetry') {
+    if (leftCol) leftCol.style.display = '';
+    if (rightCol) rightCol.style.display = 'none';
+  } else if (v === 'controls') {
+    if (leftCol) leftCol.style.display = 'none';
+    if (rightCol) rightCol.style.display = '';
+  }
+}
+navBtns.forEach(b => { b.addEventListener('click', (e)=>{ const v = b.dataset.view || 'dashboard'; showView(v); }); });
+// default
+showView('dashboard');
+
+// reconnect on click of connection dot
+connDot && connDot.addEventListener('click', () => {
+  try {
+    if (ws && ws.readyState === WebSocket.OPEN) { ws.close(); setTimeout(connectWs, 400); }
+    else connectWs();
+  } catch (e) { connectWs(); }
+});
+
+// form dirty tracking - avoid clobbering user edits
+let formDirty = false;
+const ctrlIds = ['modeSelect','extBudgetSelect','budgetInput','reqAInput','reqBInput','tempAInput','tempBInput','actAToggle','stallAToggle','actBToggle','stallBToggle'];
+ctrlIds.forEach(id => {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.addEventListener('input', ()=> { formDirty = true; });
+  el.addEventListener('change', ()=> { formDirty = true; });
+});
+
+// helper to populate control form from state (if not dirty)
+function populateControlFormFromState(state) {
+  if (formDirty) return;
+  try {
+    const modeEl = document.getElementById('modeSelect');
+    if (modeEl) modeEl.value = state.host_mode ? 'host' : 'internal';
+    const budgetEl = document.getElementById('budgetInput');
+    if (budgetEl) budgetEl.value = state.current_budget ?? budgetEl.value;
+    const reqAEl = document.getElementById('reqAInput');
+    if (reqAEl) reqAEl.value = state.req_a ?? reqAEl.value;
+    const reqBEl = document.getElementById('reqBInput');
+    if (reqBEl) reqBEl.value = state.req_b ?? reqBEl.value;
+    const tempAEl = document.getElementById('tempAInput');
+    if (tempAEl) tempAEl.value = state.temp_a ?? tempAEl.value;
+    const tempBEl = document.getElementById('tempBInput');
+    if (tempBEl) tempBEl.value = state.temp_b ?? tempBEl.value;
+    const actAEl = document.getElementById('actAToggle');
+    if (actAEl) actAEl.checked = !!state.act_a;
+    const stallAEl = document.getElementById('stallAToggle');
+    if (stallAEl) stallAEl.checked = !!state.stall_a;
+    const actBEl = document.getElementById('actBToggle');
+    if (actBEl) actBEl.checked = !!state.act_b;
+    const stallBEl = document.getElementById('stallBToggle');
+    if (stallBEl) stallBEl.checked = !!state.stall_b;
+    // extBudgetSelect may not be present in state; skip
+  } catch (e) {}
+}
+
+// expose a small reset-dirty button on double-click of the controls area
+const controlsCard = document.querySelector('.controls-card');
+if (controlsCard) {
+  controlsCard.addEventListener('dblclick', () => { formDirty = false; controlsCard.animate([{ transform: 'scale(1.02)' }, { transform: 'scale(1)' }], { duration: 200 }); });
+}
+
+// Helper to POST control payloads and update UI/ack
+async function sendControlPayload(payload) {
+  const submitBtn = form.querySelector('button[type="submit"]');
+  if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Sending...'; }
+  try {
+    // demo mode: simulate locally
+    if (window.demoMode) {
+      // update demoState from payload
+      try {
+        Object.keys(payload).forEach(k => {
+          const v = payload[k];
+          if (k === 'mode') demoState.host_mode = (v === 'host') ? 1 : 0;
+          else if (k === 'host_use_ext_budget') demoState.use_ext_budget = !!v;
+          else if (k === 'budget') demoState.current_budget = Number(v);
+          else if (k === 'req_a') demoState.req_a = Number(v);
+          else if (k === 'req_b') demoState.req_b = Number(v);
+          else if (k === 'temp_a') demoState.temp_a = Number(v);
+          else if (k === 'temp_b') demoState.temp_b = Number(v);
+          else if (k === 'act_a') demoState.act_a = v ? 1 : 0;
+          else if (k === 'act_b') demoState.act_b = v ? 1 : 0;
+          else if (k === 'stall_a') demoState.stall_a = v ? 1 : 0;
+          else if (k === 'stall_b') demoState.stall_b = v ? 1 : 0;
+        });
+      } catch (e) {}
+      demoState.frame_counter = (demoState.frame_counter || 0) + 1;
+      render(demoState);
+      const out = { ok: true, sent: Object.keys(payload).length };
+      ack.textContent = JSON.stringify(out, null, 2);
+      formDirty = false;
+      return out;
+    }
+
+    const res = await fetch('/api/control', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    const out = await res.json();
+    ack.textContent = JSON.stringify(out, null, 2);
+    // refresh state snapshot
+    try {
+      const s = await fetch('/api/state');
+      if (s.ok) {
+        const st = await s.json();
+        render(st);
+      }
+    } catch (e) {}
+    formDirty = false;
+    return out;
+  } catch (err) {
+    ack.textContent = `control send failed: ${err}`;
+    throw err;
+  } finally {
+    if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Send Control Command'; }
+  }
+}
+
+// Demo mode client-side telemetry generator
+window.demoMode = false;
+let demoTimer = null;
+let demoState = null;
+function startDemo() {
+  window.demoMode = true;
+  demoState = {
+    ts: Date.now()/1000, connected: true, frame_counter: 0, host_mode: 0,
+    alarm_a:0, alarm_b:0, clk_en_a:1, clk_en_b:1, grant_a:0, grant_b:0,
+    current_budget:4, budget_headroom:3, efficiency:0, temp_a:30, temp_b:30,
+    act_a:0, stall_a:0, act_b:0, stall_b:0, req_a:0, req_b:0, phase:0
+  };
+  if (connDot) connDot.classList.add('online');
+  if (connText) connText.textContent = 'Demo';
+  demoTimer = setInterval(()=>{
+    demoState.frame_counter += 1;
+    demoState.efficiency = Math.round( (Math.sin(demoState.frame_counter/6) + 1) * 50 );
+    demoState.temp_a = clamp(30 + Math.round(6*Math.sin(demoState.frame_counter/8)), 20, 80);
+    demoState.temp_b = clamp(30 + Math.round(6*Math.cos(demoState.frame_counter/10)), 20, 80);
+    // toggle random activity
+    demoState.act_a = (demoState.frame_counter % 7 < 4) ? 1 : 0;
+    demoState.act_b = (demoState.frame_counter % 11 < 6) ? 1 : 0;
+    demoState.grant_a = demoState.act_a ? 2 : 0;
+    demoState.grant_b = demoState.act_b ? 1 : 0;
+    render(demoState);
+  }, 600);
+}
+
+function stopDemo() {
+  window.demoMode = false;
+  if (demoTimer) { clearInterval(demoTimer); demoTimer = null; }
+  if (connDot) connDot.classList.remove('online');
+  if (connText) connText.textContent = 'Disconnected';
+}
+
+// Demo toggle binding
+const demoToggle = el('demoToggle');
+if (demoToggle) {
+  demoToggle.addEventListener('change', (e)=>{
+    if (e.target.checked) startDemo(); else stopDemo();
+  });
+}
+
+// Quick-action bindings
+function el(id) { return document.getElementById(id); }
+
+el('btnToggleMode') && el('btnToggleMode').addEventListener('click', async () => {
+  const modeEl = el('modeSelect'); if (!modeEl) return;
+  const next = modeEl.value === 'internal' ? 'host' : 'internal'; modeEl.value = next; await sendControlPayload({ mode: next });
+});
+
+el('btnToggleExtBudget') && el('btnToggleExtBudget').addEventListener('click', async () => {
+  const e = el('extBudgetSelect'); if (!e) return; const next = e.value === 'true' ? false : true; e.value = next ? 'true' : 'false'; await sendControlPayload({ host_use_ext_budget: next });
+});
+
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+el('btnReqAPlus') && el('btnReqAPlus').addEventListener('click', async () => { const inp = el('reqAInput'); if (!inp) return; const v = clamp(Number(inp.value || 0) + 1, 0, 3); inp.value = v; await sendControlPayload({ req_a: v }); });
+el('btnReqAMinus') && el('btnReqAMinus').addEventListener('click', async () => { const inp = el('reqAInput'); if (!inp) return; const v = clamp(Number(inp.value || 0) - 1, 0, 3); inp.value = v; await sendControlPayload({ req_a: v }); });
+el('btnReqBPlus') && el('btnReqBPlus').addEventListener('click', async () => { const inp = el('reqBInput'); if (!inp) return; const v = clamp(Number(inp.value || 0) + 1, 0, 3); inp.value = v; await sendControlPayload({ req_b: v }); });
+el('btnReqBMinus') && el('btnReqBMinus').addEventListener('click', async () => { const inp = el('reqBInput'); if (!inp) return; const v = clamp(Number(inp.value || 0) - 1, 0, 3); inp.value = v; await sendControlPayload({ req_b: v }); });
+
+el('btnBudgetPlus') && el('btnBudgetPlus').addEventListener('click', async () => { const inp = el('budgetInput'); if (!inp) return; const v = clamp(Number(inp.value || 0) + 1, 0, 7); inp.value = v; await sendControlPayload({ budget: v }); });
+el('btnBudgetMinus') && el('btnBudgetMinus').addEventListener('click', async () => { const inp = el('budgetInput'); if (!inp) return; const v = clamp(Number(inp.value || 0) - 1, 0, 7); inp.value = v; await sendControlPayload({ budget: v }); });
+
+el('btnTempAPlus') && el('btnTempAPlus').addEventListener('click', async () => { const inp = el('tempAInput'); if (!inp) return; const v = clamp(Number(inp.value || 0) + 1, 0, 127); inp.value = v; await sendControlPayload({ temp_a: v }); });
+el('btnTempAMinus') && el('btnTempAMinus').addEventListener('click', async () => { const inp = el('tempAInput'); if (!inp) return; const v = clamp(Number(inp.value || 0) - 1, 0, 127); inp.value = v; await sendControlPayload({ temp_a: v }); });
+el('btnTempBPlus') && el('btnTempBPlus').addEventListener('click', async () => { const inp = el('tempBInput'); if (!inp) return; const v = clamp(Number(inp.value || 0) + 1, 0, 127); inp.value = v; await sendControlPayload({ temp_b: v }); });
+el('btnTempBMinus') && el('btnTempBMinus').addEventListener('click', async () => { const inp = el('tempBInput'); if (!inp) return; const v = clamp(Number(inp.value || 0) - 1, 0, 127); inp.value = v; await sendControlPayload({ temp_b: v }); });
+
+el('btnSyncState') && el('btnSyncState').addEventListener('click', async () => { try { const res = await fetch('/api/state'); if (res.ok) { const st = await res.json(); render(st); ack.textContent = 'State synced'; } } catch (e) { ack.textContent = `sync failed: ${e}`; } });
+
+el('btnResetDirty') && el('btnResetDirty').addEventListener('click', () => { formDirty = false; ack.textContent = 'Form unlocked'; });
