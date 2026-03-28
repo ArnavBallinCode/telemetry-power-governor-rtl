@@ -124,7 +124,7 @@ localparam STALL_HIGH = 7'd50;   // ≥ this → pipeline choked     → block u
 // The FSM must see an upscale/downscale condition for DWELL consecutive
 // windows before committing the transition.  Prevents flip-flopping.
 // ---------------------------------------------------------------------------
-localparam DWELL = 3'd3;   // windows required to confirm a decision
+localparam DWELL = 3'd1;   // windows required to confirm a decision (1 = immediate)
 
 // P4: EWMA predictor accumulator (10-bit internal, 7-bit visible)
 reg [2:0] up_dwell, dn_dwell;
@@ -176,7 +176,7 @@ always @(posedge clk or negedge rst_n) begin
             // P4+P3: Upscale decision uses EWMA predictor to pre-empt ramps.
             // Use the registered `ewma_out` (prediction) here; it reflects
             // the smoothed history available at the start of this window.
-            if (ewma_out >= ACT_HIGH && stall_count < STALL_HIGH) begin
+            if ((activity_count >= ACT_HIGH || ewma_out >= ACT_HIGH) && stall_count < STALL_HIGH) begin
                 up_dwell <= up_dwell + 3'd1;
                 dn_dwell <= 3'd0;
                 if (up_dwell >= (DWELL - 1)) begin
