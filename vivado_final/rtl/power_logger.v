@@ -207,7 +207,9 @@ always @(posedge clk or negedge rst_n) begin
                 // Uses a sequential divider to avoid a long critical path.
                 if (period_power_next == 6'd0)
                     begin
-                        efficiency <= 10'h3FF;   // avoid divide-by-zero
+                        // True idle window: no power consumed, no useful work.
+                        // Report zero efficiency instead of a saturated max value.
+                        efficiency <= 10'd0;
                         log_valid  <= 1'b1;
                     end
                 else if (!div_busy)

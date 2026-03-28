@@ -270,6 +270,7 @@ module pwr_gov_axi_lite #(
                         stall_a_in,
                         act_a_in,
                         temp_b_in,
+                        1'b0,
                         temp_a_in
                     };
                     6'h0C: s_axi_rdata <= sample_counter;
