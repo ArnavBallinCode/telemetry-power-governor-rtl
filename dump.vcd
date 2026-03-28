@@ -1,5 +1,5 @@
 $date
-	Sat Mar 28 13:28:51 2026
+	Sat Mar 28 13:39:43 2026
 $end
 $version
 	Icarus Verilog
@@ -7,439 +7,513 @@ $end
 $timescale
 	1ps
 $end
-$scope module tb_power_fsm $end
-$var wire 2 ! workload_class [1:0] $end
-$var wire 2 " power_state_out [1:0] $end
-$var wire 7 # ewma_out [6:0] $end
-$var parameter 2 $ STATE_ACTIVE $end
-$var parameter 2 % STATE_LOW_POWER $end
-$var parameter 2 & STATE_SLEEP $end
-$var parameter 2 ' STATE_TURBO $end
-$var reg 7 ( activity_count [6:0] $end
-$var reg 1 ) clk $end
-$var reg 1 * rst_n $end
-$var reg 7 + stall_count [6:0] $end
-$var reg 1 , thermal_alarm $end
-$var reg 1 - window_done $end
-$scope function state_name $end
-$var reg 2 . s [1:0] $end
+$scope module tb_power_arbiter_direct $end
+$var wire 2 ! wl_b [1:0] $end
+$var wire 2 " wl_a [1:0] $end
+$var wire 2 # req_b [1:0] $end
+$var wire 2 $ req_a [1:0] $end
+$var wire 2 % grant_b [1:0] $end
+$var wire 2 & grant_a [1:0] $end
+$var wire 7 ' ewma_b [6:0] $end
+$var wire 7 ( ewma_a [6:0] $end
+$var wire 1 ) clk_en_b $end
+$var wire 1 * clk_en_a $end
+$var wire 2 + applied_state_b [1:0] $end
+$var wire 2 , applied_state_a [1:0] $end
+$var reg 1 - activity_a $end
+$var reg 1 . activity_b $end
+$var reg 7 / activity_count_a [6:0] $end
+$var reg 7 0 activity_count_b [6:0] $end
+$var reg 1 1 clk $end
+$var reg 1 2 rst_n $end
+$var reg 1 3 stall_a $end
+$var reg 1 4 stall_b $end
+$var reg 7 5 stall_count_a [6:0] $end
+$var reg 7 6 stall_count_b [6:0] $end
+$var reg 7 7 temp_a [6:0] $end
+$var reg 7 8 temp_b [6:0] $end
+$var reg 1 9 thermal_alarm_a $end
+$var reg 1 : thermal_alarm_b $end
+$var reg 7 ; thresh_a [6:0] $end
+$var reg 7 < thresh_b [6:0] $end
+$var reg 1 = window_done_a $end
+$var reg 1 > window_done_b $end
+$scope module ARB $end
+$var wire 7 ? temp_a [6:0] $end
+$var wire 7 @ temp_b [6:0] $end
+$var wire 3 A total_requested [2:0] $end
+$var wire 2 B req_b [1:0] $end
+$var wire 2 C req_a [1:0] $end
+$var parameter 3 D BUDGET $end
+$var reg 2 E grant_a [1:0] $end
+$var reg 2 F grant_b [1:0] $end
+$var reg 3 G remaining [2:0] $end
 $upscope $end
-$scope module DUT $end
-$var wire 7 / activity_count [6:0] $end
-$var wire 1 ) clk $end
-$var wire 1 * rst_n $end
-$var wire 7 0 stall_count [6:0] $end
-$var wire 1 , thermal_alarm $end
-$var wire 1 - window_done $end
-$var parameter 7 1 ACT_HIGH $end
-$var parameter 7 2 ACT_LOW $end
-$var parameter 3 3 DWELL $end
-$var parameter 7 4 STALL_HIGH $end
-$var parameter 2 5 STATE_ACTIVE $end
-$var parameter 2 6 STATE_LOW_POWER $end
-$var parameter 2 7 STATE_SLEEP $end
-$var parameter 2 8 STATE_TURBO $end
-$var parameter 2 9 WL_BURSTY $end
-$var parameter 2 : WL_COMPUTE $end
-$var parameter 2 ; WL_IDLE $end
-$var parameter 2 < WL_SUSTAINED $end
-$var reg 3 = dn_dwell [2:0] $end
-$var reg 10 > ewma_accum [9:0] $end
-$var reg 7 ? ewma_out [6:0] $end
-$var reg 2 @ power_state_out [1:0] $end
-$var reg 3 A up_dwell [2:0] $end
-$var reg 2 B workload_class [1:0] $end
+$scope module FSM_A $end
+$var wire 7 H activity_count [6:0] $end
+$var wire 1 1 clk $end
+$var wire 1 2 rst_n $end
+$var wire 7 I stall_count [6:0] $end
+$var wire 1 9 thermal_alarm $end
+$var wire 1 = window_done $end
+$var parameter 7 J ACT_HIGH $end
+$var parameter 7 K ACT_LOW $end
+$var parameter 3 L DWELL $end
+$var parameter 7 M STALL_HIGH $end
+$var parameter 2 N STATE_ACTIVE $end
+$var parameter 2 O STATE_LOW_POWER $end
+$var parameter 2 P STATE_SLEEP $end
+$var parameter 2 Q STATE_TURBO $end
+$var parameter 2 R WL_BURSTY $end
+$var parameter 2 S WL_COMPUTE $end
+$var parameter 2 T WL_IDLE $end
+$var parameter 2 U WL_SUSTAINED $end
+$var reg 3 V dn_dwell [2:0] $end
+$var reg 10 W ewma_accum [9:0] $end
+$var reg 7 X ewma_out [6:0] $end
+$var reg 2 Y power_state_out [1:0] $end
+$var reg 3 Z up_dwell [2:0] $end
+$var reg 2 [ workload_class [1:0] $end
 $upscope $end
-$scope task check_state $end
-$var reg 2 C expected [1:0] $end
-$var reg 64 D test_num [63:0] $end
+$scope module FSM_B $end
+$var wire 7 \ activity_count [6:0] $end
+$var wire 1 1 clk $end
+$var wire 1 2 rst_n $end
+$var wire 7 ] stall_count [6:0] $end
+$var wire 1 : thermal_alarm $end
+$var wire 1 > window_done $end
+$var parameter 7 ^ ACT_HIGH $end
+$var parameter 7 _ ACT_LOW $end
+$var parameter 3 ` DWELL $end
+$var parameter 7 a STALL_HIGH $end
+$var parameter 2 b STATE_ACTIVE $end
+$var parameter 2 c STATE_LOW_POWER $end
+$var parameter 2 d STATE_SLEEP $end
+$var parameter 2 e STATE_TURBO $end
+$var parameter 2 f WL_BURSTY $end
+$var parameter 2 g WL_COMPUTE $end
+$var parameter 2 h WL_IDLE $end
+$var parameter 2 i WL_SUSTAINED $end
+$var reg 3 j dn_dwell [2:0] $end
+$var reg 10 k ewma_accum [9:0] $end
+$var reg 7 l ewma_out [6:0] $end
+$var reg 2 m power_state_out [1:0] $end
+$var reg 3 n up_dwell [2:0] $end
+$var reg 2 o workload_class [1:0] $end
+$upscope $end
+$scope module REG_A $end
+$var wire 1 - activity_in $end
+$var wire 1 1 clk $end
+$var wire 2 p power_state_in [1:0] $end
+$var wire 1 2 rst_n $end
+$var wire 1 3 stall_in $end
+$var wire 7 q temp_in [6:0] $end
+$var wire 7 r thermal_thresh_in [6:0] $end
+$var reg 1 s activity_out $end
+$var reg 1 * clk_en $end
+$var reg 2 t power_state_out [1:0] $end
+$var reg 1 u stall_out $end
+$var reg 7 v temp_out [6:0] $end
+$var reg 1 w thermal_alarm $end
+$var reg 7 x thermal_thresh_out [6:0] $end
+$upscope $end
+$scope module REG_B $end
+$var wire 1 . activity_in $end
+$var wire 1 1 clk $end
+$var wire 2 y power_state_in [1:0] $end
+$var wire 1 2 rst_n $end
+$var wire 1 4 stall_in $end
+$var wire 7 z temp_in [6:0] $end
+$var wire 7 { thermal_thresh_in [6:0] $end
+$var reg 1 | activity_out $end
+$var reg 1 ) clk_en $end
+$var reg 2 } power_state_out [1:0] $end
+$var reg 1 ~ stall_out $end
+$var reg 7 !" temp_out [6:0] $end
+$var reg 1 "" thermal_alarm $end
+$var reg 7 #" thermal_thresh_out [6:0] $end
 $upscope $end
 $scope task send_window $end
-$var reg 7 E act_cnt [6:0] $end
-$var reg 7 F stl_cnt [6:0] $end
-$var reg 1 G therm $end
+$var reg 7 $" act_a [6:0] $end
+$var reg 7 %" act_b [6:0] $end
+$var reg 7 &" stl_a [6:0] $end
+$var reg 7 '" stl_b [6:0] $end
+$var reg 1 (" therm_a $end
+$var reg 1 )" therm_b $end
 $upscope $end
 $upscope $end
 $enddefinitions $end
 $comment Show the parameter values. $end
 $dumpall
-b11 <
-b0 ;
-b10 :
-b1 9
-b11 8
-b0 7
-b1 6
-b10 5
-b110010 4
-b1 3
-b10100 2
-b1001011 1
-b11 '
-b0 &
-b1 %
-b10 $
+b11 i
+b0 h
+b10 g
+b1 f
+b11 e
+b0 d
+b1 c
+b10 b
+b110010 a
+b1 `
+b10100 _
+b1001011 ^
+b11 U
+b0 T
+b10 S
+b1 R
+b11 Q
+b0 P
+b1 O
+b10 N
+b110010 M
+b1 L
+b10100 K
+b1001011 J
+b100 D
 $end
 #0
 $dumpvars
-xG
-bx F
-bx E
-bx D
-bx C
+x)"
+x("
+bx '"
+bx &"
+bx %"
+bx $"
+b1010101 #"
+0""
+b0 !"
+0~
+b0 }
+0|
+b1010101 {
+b11110 z
+b0 y
+b1010101 x
+0w
+b0 v
+0u
+b0 t
+0s
+b1010101 r
+b11110 q
+b0 p
+b0 o
+b0 n
+b0 m
+b0 l
+b0 k
+b0 j
+b0 ]
+b0 \
+b0 [
+b0 Z
+b0 Y
+b0 X
+b0 W
+b0 V
+b0 I
+b0 H
+b100 G
+b0 F
+b0 E
+b0 C
 b0 B
 b0 A
-b0 @
-b0 ?
-b0 >
-b0 =
+b11110 @
+b11110 ?
+0>
+0=
+b1010101 <
+b1010101 ;
+0:
+09
+b11110 8
+b11110 7
+b0 6
+b0 5
+04
+03
+02
+01
 b0 0
 b0 /
-bx .
+0.
 0-
-0,
+b0 ,
 b0 +
 0*
 0)
 b0 (
+b0 '
+b0 &
+b0 %
+b0 $
 b0 #
 b0 "
 b0 !
 $end
 #5000
-1)
+11
 #10000
-0)
+01
 #15000
-1)
+11
 #20000
-0)
+01
 #25000
-1*
-1)
+b11110 !"
+b11110 v
+12
+11
 #30000
-0)
+01
 #35000
-b1010 +
-b1010 0
-b1010000 (
+b1010000 0
+b1010000 \
 b1010000 /
-0G
-b1010 F
-b1010000 E
-b0 .
-1)
+b1010000 H
+0)"
+0("
+b0 '"
+b1010000 %"
+b0 &"
+b1010000 $"
+11
 #40000
-1-
-0)
+1>
+1=
+01
 #45000
+b10 A
+b1 %
+b1 F
+b1 y
+b1 &
+b1 E
+b1 p
 b10 !
-b10 B
-b1010000 >
-b1 "
-b1 @
-b0 A
-1)
-#50000
-0-
-0)
-#55000
-b1 D
-b1 C
-b1 .
-1)
-#60000
-1-
-0)
-#65000
-b1010 #
-b1010 ?
-b10010110 >
-b10 "
-b10 @
-b0 A
-1)
-#70000
-0-
-0)
-#75000
-b10 C
-b10 .
-1)
-#80000
-1-
-0)
-#85000
-b10010 #
-b10010 ?
-b11010100 >
-b11 "
-b11 @
-b0 A
-1)
-#90000
-0-
-0)
-#95000
-b11 C
-b11 .
-1)
-#100000
-1-
-0)
-#105000
-b11010 #
-b11010 ?
-b100001010 >
-b0 A
-1)
-#110000
-0-
-0)
-#115000
-b0 +
-b0 0
-b1010 (
-b1010 /
-b0 F
-b1010 E
-1)
-#120000
-1-
-0)
-#125000
-b0 !
-b0 B
-b100001 #
-b100001 ?
-b11110011 >
-b10 "
-b10 @
-b0 =
-1)
-#130000
-0-
-0)
-#135000
-b10 D
-b10 C
-b10 .
-1)
-#140000
-1-
-0)
-#145000
-b11110 #
-b11110 ?
-b11011111 >
-b1 "
-b1 @
-b0 =
-1)
-#150000
-0-
-0)
-#155000
-b1 C
-b1 .
-1)
-#160000
-1-
-0)
-#165000
-b11011 #
-b11011 ?
-b11001110 >
-b0 "
-b0 @
-b0 =
-1)
-#170000
-0-
-0)
-#175000
-b0 C
-b0 .
-1)
-#180000
-1-
-0)
-#185000
-b11001 #
-b11001 ?
-b10111111 >
-b0 =
-1)
-#190000
-0-
-0)
-#195000
-b111100 +
-b111100 0
-b1010000 (
-b1010000 /
-b111100 F
-b1010000 E
-1)
-#200000
-1-
-0)
-#205000
-b1 !
+b10 o
+b1010000 k
+b1 #
 b1 B
-b10111 #
-b10111 ?
-b11111000 >
-1)
-#210000
-0-
-0)
-#215000
-1)
-#220000
-1-
-0)
-#225000
-b11111 #
-b11111 ?
-b100101001 >
-1)
-#230000
-0-
-0)
-#235000
-b1010 +
-b1010 0
-b1010 F
-1)
-#240000
-1-
-0)
-#245000
-b10 !
+b1 m
+b0 n
+b10 "
+b10 [
+b1010000 W
+b1 $
+b1 C
+b1 Y
+b0 Z
+11
+#50000
+0>
+0=
+01
+#55000
+b1 ,
+b1 t
+b1 +
+b1 }
+11
+#60000
+1>
+1=
+01
+#65000
+b100 A
+b10 %
+b10 F
+b10 y
+b10 &
+b10 E
+b10 p
+b1010 '
+b1010 l
+b10010110 k
+b10 #
 b10 B
-b100101 #
-b100101 ?
-b101010100 >
-b1 "
-b1 @
-b0 A
-1)
-#250000
-0-
-0)
-#255000
-1)
-#260000
-1-
-0)
-#265000
-b101010 #
-b101010 ?
-b101111010 >
-b10 "
-b10 @
-b0 A
-1)
-#270000
-0-
-0)
-#275000
-1)
-#280000
-1-
-0)
-#285000
-b101111 #
-b101111 ?
-b110011011 >
-b11 "
-b11 @
-b0 A
-1)
-#290000
-0-
-0)
-#295000
-1,
-1G
-b11 .
-1)
-#300000
-1-
-0)
-#305000
-b110011 #
-b110011 ?
-b110111000 >
-b1 "
-b1 @
-1)
-#310000
-0-
-0)
-#315000
-b1 .
-1)
-#320000
-1-
-0)
-#325000
-b110111 #
-b110111 ?
-b111010001 >
-1)
-#330000
-0-
-0)
-#335000
-0G
-0,
-1)
-#340000
-1-
-0)
-#345000
-b111010 #
-b111010 ?
-b111100111 >
-b10 "
-b10 @
-b0 A
-1)
-#350000
-0-
-0)
-#355000
-b0 !
-b0 B
-b0 #
-b0 ?
-b0 >
-b0 "
-b0 @
-0*
-b10 .
-1)
-#360000
-0)
-#365000
-1)
-#370000
-0)
-#375000
+b10 m
+b0 n
+b1010 (
+b1010 X
+b10010110 W
+b10 $
+b10 C
+b10 Y
+b0 Z
+11
+#70000
+0>
+0=
+01
+#75000
 1*
-b0 .
+b10 ,
+b10 t
 1)
-#380000
+b10 +
+b10 }
+11
+#80000
+1>
+1=
+01
+#85000
+b1 G
+b110 A
+b1 %
+b1 F
+b1 y
+b11 &
+b11 E
+b11 p
+b10010 '
+b10010 l
+b11010100 k
+b11 #
+b11 B
+b11 m
+b0 n
+b10010 (
+b10010 X
+b11010100 W
+b11 $
+b11 C
+b11 Y
+b0 Z
+11
+#90000
+0>
+0=
+01
+#95000
+b0 A
+b0 %
+b0 F
+b0 y
+b100 G
+b0 &
+b0 E
+b0 p
+0*
+b0 v
+b0 ,
+b0 t
 0)
-#385000
+b0 !"
+b0 +
+b0 }
+b0 "
+b0 [
+b0 (
+b0 X
+b0 W
+b0 $
+b0 C
+b0 Y
+b0 !
+b0 o
+b0 '
+b0 l
+b0 k
+b0 #
+b0 B
+b0 m
+02
+11
+#100000
+01
+#105000
+b11110 !"
+b11110 v
+12
+11
+#110000
+01
+#115000
+11
+#120000
+1>
+1=
+01
+#125000
+b10 A
+b1 %
+b1 F
+b1 y
+b1 &
+b1 E
+b1 p
+b10 !
+b10 o
+b1010000 k
+b1 #
+b1 B
+b1 m
+b0 n
+b10 "
+b10 [
+b1010000 W
+b1 $
+b1 C
+b1 Y
+b0 Z
+11
+#130000
+0>
+0=
+01
+#135000
+b1 ,
+b1 t
+b1 +
+b1 }
+11
+#140000
+1>
+1=
+01
+#145000
+b100 A
+b10 %
+b10 F
+b10 y
+b10 &
+b10 E
+b10 p
+b1010 '
+b1010 l
+b10010110 k
+b10 #
+b10 B
+b10 m
+b0 n
+b1010 (
+b1010 X
+b10010110 W
+b10 $
+b10 C
+b10 Y
+b0 Z
+11
+#150000
+0>
+0=
+01
+#155000
+1*
+b10 ,
+b10 t
 1)
-#390000
-0)
-#395000
-1)
-#400000
-0)
-#405000
-1)
+b10 +
+b10 }
+11
+#160000
+01
+#165000
+11
+#170000
+01
+#175000
+11

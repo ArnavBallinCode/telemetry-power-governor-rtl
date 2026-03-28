@@ -31,6 +31,10 @@ vvp tb_reg_interface.vvp
 # power_fsm
 iverilog -g2012 -o tb_power_fsm.vvp power_fsm.v reg_interface.v counters.v tb_power_fsm.v
 vvp tb_power_fsm.vvp
+
+# Arbiter integration (direct windows)
+iverilog -g2012 -o tb_power_arbiter_direct.vvp tb_power_arbiter_direct.v power_arbiter.v power_fsm.v reg_interface.v counters.v
+vvp tb_power_arbiter_direct.vvp
 ```
 
 After a run, open the generated waveform `dump.vcd` with GTKWave:

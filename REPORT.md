@@ -3,9 +3,9 @@ Power Management Module — Audit & Implementation Report
 
 **Summary**
 
-- Implemented a 4-state power governor and surrounding infrastructure covering the hackathon rubric P1–P5. The only Level‑2 item suggested (a multi-module arbiter) was left optional and not instantiated.
-- Key features added: `power_fsm` (P1), thermal throttling hooks and configurable threshold in `reg_interface` (P2), hysteresis/dwell counters to avoid oscillation (P3), EWMA workload predictor (P4), and per-window workload classification (P5).
-- All testbenches (`tb_counters.v`, `tb_reg_interface.v`, `tb_power_fsm.v`) were updated or added and pass with Icarus Verilog on macOS.
+- Implemented a 4-state power governor and surrounding infrastructure covering the hackathon rubric P1–P6. A multi-module arbiter (`power_arbiter.v`) and integrated testbench were added to demonstrate Level‑2 budgeting.
+- Key features added: `power_fsm` (P1), thermal throttling hooks and configurable threshold in `reg_interface` (P2), hysteresis/dwell counters to avoid oscillation (P3), EWMA workload predictor (P4), per-window workload classification (P5), and `power_arbiter` (P6).
+- All testbenches (`tb_counters.v`, `tb_reg_interface.v`, `tb_power_fsm.v`, `tb_power_arbiter_direct.v`) were updated or added and pass with Icarus Verilog on macOS.
 
 **Repository files**
 
