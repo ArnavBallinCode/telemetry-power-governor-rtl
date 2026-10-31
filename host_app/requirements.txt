@@ -2,3 +2,4 @@ fastapi==0.115.0
 uvicorn==0.30.6
 pyserial==3.5
 python-multipart==0.0.22
+unilimit>=0.1.1; python_version >= "3.11"
